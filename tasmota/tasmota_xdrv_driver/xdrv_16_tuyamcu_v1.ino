@@ -86,6 +86,7 @@ struct TUYA {
 #endif // USE_ENERGY_SENSOR
   char *buffer = nullptr;                 // Serial receive buffer
   int byte_counter = 0;                   // Index in serial receive buffer
+  uint8_t last_button;
   bool low_power_mode = false;            // Normal or Low power mode protocol
   bool send_success_next_second = false;  // Second command success in low power mode
   uint32_t ignore_dimmer_cmd_timeout = 0; // Time until which received dimmer commands should be ignored
@@ -847,11 +848,11 @@ void TuyaProcessStatePacket(void) {
             if (Tuya.buffer[dpidStart + 4]) { PowerOff = true; }
           }
         } else if (fnId >= TUYA_MCU_FUNC_SWT1 && fnId <= TUYA_MCU_FUNC_SWT4) {
-          AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: RX Switch-%d --> MCU State: %d Current State:%d"),fnId - TUYA_MCU_FUNC_SWT1 + 1,Tuya.buffer[dpidStart + 4], SwitchGetVirtual(fnId - TUYA_MCU_FUNC_SWT1));
-
-          if (SwitchGetVirtual(fnId - TUYA_MCU_FUNC_SWT1) != Tuya.buffer[dpidStart + 4]) {
-            SwitchSetVirtual(fnId - TUYA_MCU_FUNC_SWT1, Tuya.buffer[dpidStart + 4]);
-            SwitchHandler(1);
+          uint32_t switch_index = fnId - TUYA_MCU_FUNC_SWT1;
+          uint32_t switch_state = SwitchGetState(switch_index);
+          AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: RX Switch-%d --> MCU State: %d Current State:%d"), switch_index +1, Tuya.buffer[dpidStart + 4], switch_state);
+          if (switch_state != Tuya.buffer[dpidStart + 4]) {
+            SwitchSetState(switch_index, Tuya.buffer[dpidStart + 4]);
           }
         }
         if (PowerOff) { Tuya.ignore_dimmer_cmd_timeout = millis() + 250; }
@@ -1133,7 +1134,7 @@ void TuyaNormalPowerModePacketProcess(void)
       }
       TuyaRequestState(0);
       break;
-    case TUYA_CMD_GET_WIFI_STRENGTH: 
+    case TUYA_CMD_GET_WIFI_STRENGTH:
       TuyaSetWifiStrength();
       break;
     case TUYA_CMD_TEST_WIFI:
@@ -1333,12 +1334,21 @@ void TuyaSerialInput(void)
       ResponseAppend_P(PSTR("}}"));
 
       if (Settings->flag3.tuya_serial_mqtt_publish) {  // SetOption66 - Enable TuyaMcuReceived messages over Mqtt
+/*
         for (uint8_t cmdsID = 0; sizeof(TuyaExcludeCMDsFromMQTT) > cmdsID; cmdsID++){
           if (TuyaExcludeCMDsFromMQTT[cmdsID] == Tuya.buffer[3]) {
             isCmdToSuppress = true;
             break;
           }
         }
+*/
+        for (uint8_t cmdsID = 0; cmdsID < sizeof(TuyaExcludeCMDsFromMQTT); cmdsID++) {
+          if (pgm_read_byte(TuyaExcludeCMDsFromMQTT +cmdsID) == Tuya.buffer[3]) {
+            isCmdToSuppress = true;
+            break;
+          }
+        }
+
         if (!(isCmdToSuppress && Settings->flag5.tuya_exclude_from_mqtt)) {  // SetOption137 - (Tuya) When Set, avoid the (MQTT-) publish of defined Tuya CMDs (see TuyaExcludeCMDsFromMQTT) if SetOption66 is active
           MqttPublishPrefixTopic_P(RESULT_OR_TELE, PSTR(D_JSON_TUYA_MCU_RECEIVED));
         } else {
@@ -1382,14 +1392,16 @@ void TuyaSerialInput(void)
   }
 }
 
-bool TuyaButtonPressed(void)
-{
-  if (!XdrvMailbox.index && ((PRESSED == XdrvMailbox.payload) && (NOT_PRESSED == Button.last_state[XdrvMailbox.index]))) {
+bool TuyaButtonPressed(void) {
+  bool result = false;
+  uint32_t button = XdrvMailbox.payload;
+  if (!XdrvMailbox.index && ((PRESSED == button) && (NOT_PRESSED == Tuya.last_button))) {
     AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Reset GPIO triggered"));
     TuyaResetWifi();
-    return true;  // Reset GPIO served here
+    result = true;  // Reset GPIO served here
   }
-  return false;   // Don't serve other buttons
+  Tuya.last_button = button;
+  return result;   // Don't serve other buttons
 }
 
 uint8_t TuyaGetTuyaWifiState(void) {

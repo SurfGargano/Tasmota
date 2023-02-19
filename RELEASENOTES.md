@@ -75,7 +75,7 @@ Latest released binaries can be downloaded from
 - http://ota.tasmota.com/tasmota/release
 
 Historical binaries can be downloaded from
-- http://ota.tasmota.com/tasmota/release-12.3.1
+- http://ota.tasmota.com/tasmota/release-12.4.0
 
 The latter links can be used for OTA upgrades too like ``OtaUrl http://ota.tasmota.com/tasmota/release/tasmota.bin.gz``
 
@@ -100,7 +100,7 @@ Latest released binaries can be downloaded from
 - https://ota.tasmota.com/tasmota32/release
 
 Historical binaries can be downloaded from
-- https://ota.tasmota.com/tasmota32/release-12.3.1
+- https://ota.tasmota.com/tasmota32/release-12.4.0
 
 The latter links can be used for OTA upgrades too like ``OtaUrl https://ota.tasmota.com/tasmota32/release/tasmota32.bin``
 
@@ -110,48 +110,15 @@ The latter links can be used for OTA upgrades too like ``OtaUrl https://ota.tasm
 
 [Complete list](BUILDS.md) of available feature and sensors.
 
-## Changelog v12.3.1.6
+## Changelog v12.4.0.1
 ### Added
-- Support for up to 3 (ESP8266) or 8 (ESP32) phase modbus energy monitoring device using generic Energy Modbus driver
-- Support for RGB displays [#17414](https://github.com/arendst/Tasmota/issues/17414)
-- Support for IPv6 DNS records (AAAA) and IPv6 ``Ping`` for ESP32 and ESP8266 [#17417](https://github.com/arendst/Tasmota/issues/17417)
-- Support for IPv6 only networks on Ethernet (not yet Wifi)
-- Support for TM1650 display as used in some clocks by Stefan Oskamp [#17594](https://github.com/arendst/Tasmota/issues/17594)
-- Support for PCA9632 4-channel 8-bit PWM driver as light driver by Pascal Heinrich [#17557](https://github.com/arendst/Tasmota/issues/17557)
-- support for SEN5X gas and air quality sensor by Tyeth Gundry [#17736](https://github.com/arendst/Tasmota/issues/17736)
-- Basic support for Shelly Pro 4PM
-- Berry support for ``crypto.SHA256`` [#17430](https://github.com/arendst/Tasmota/issues/17430)
-- Berry crypto add ``EC_P256`` and ``PBKDF2_HMAC_SHA256`` algorithms required by Matter protocol [#17473](https://github.com/arendst/Tasmota/issues/17473)
-- Berry crypto add ``random`` to generate series of random bytes
-- Berry crypto add ``HKDF_HMAC_SHA256``
-- Berry crypto add ``SPAKE2P_Matter`` for Matter support
-- Berry add ``mdns`` advanced features and query
-- ESP32 command ``EnergyCols 1..8`` to change number of GUI columns
-- ESP32 command ``EnergyDisplay 1..3`` to change GUI column presentation
-- ESP32 support for eigth energy phases/channels
-- ESP32 support for BMPxxx sensors on two I2C busses [#17643](https://github.com/arendst/Tasmota/issues/17643)
-- ESP32 support for Biomine BioPDU 625x12 [#17857](https://github.com/arendst/Tasmota/issues/17857)
-- ESP32 preliminary support for Matter protocol, milestone 1 (commissioning) by Stephan Hadinger
 
 ### Breaking Changed
-- TM1638 button and led support are handled as virtual switches and relays [#11031](https://github.com/arendst/Tasmota/issues/11031)
 
 ### Changed
-- ESP32 Framework (Core) from v2.0.5.3 to v2.0.6 (IPv6 support)
-- Energy totals max supported value from +/-21474.83647 to +/-2147483.647 kWh
-- Removed delays in TasmotaSerial and TasmotaModbus Tx enable switching
-- Keep webserver enabled on command ``upload``
-- Increase rule event buffer from 100 to 256 characters [#16943](https://github.com/arendst/Tasmota/issues/16943)
-- TuyaMcu rewrite by btsimonh [#17051](https://github.com/arendst/Tasmota/issues/17051)
-- Tasmota OTA scripts now support both unzipped and gzipped file uploads [#17378](https://github.com/arendst/Tasmota/issues/17378)
+- ADC Range oversample from 2 to 32 [#17975](https://github.com/arendst/Tasmota/issues/17975)
 
 ### Fixed
-- Modbus transmit enable GPIO enabled once during write buffer
-- Energy dummy switched voltage and power regression from v12.2.0.2
-- ESP8266 set GPIO's to input on power on fixing relay spikes [#17531](https://github.com/arendst/Tasmota/issues/17531)
-- Shutter default motorstop set to 0 [#17403](https://github.com/arendst/Tasmota/issues/17403)
-- Shutter default tilt configuration [#17484](https://github.com/arendst/Tasmota/issues/17484)
-- Orno WE517 modbus serial config 8E1 setting [#17545](https://github.com/arendst/Tasmota/issues/17545)
-- Rename ``tasmota4M.bin`` to ``tasmota-4M.bin`` to solve use of ``tasmota-minimal.bin`` [#17674](https://github.com/arendst/Tasmota/issues/17674)
-
-### Removed
+- SEN5X floats and units [#17961](https://github.com/arendst/Tasmota/issues/17961)
+- Energytotals cannot be set to negative values [#17965](https://github.com/arendst/Tasmota/issues/17965)
+- SR04 driver single pin ultrasonic sensor detection [#17966](https://github.com/arendst/Tasmota/issues/17966)
