@@ -38,9 +38,11 @@ class Matter_Device
   var hostname_eth                    # MAC-derived hostname for commissioning
   var vendorid
   var productid
+  # saved in parameters
   var discriminator
-  # context for PBKDF
   var passcode
+  var ipv4only                        # advertize only IPv4 addresses (no IPv6)
+  # context for PBKDF
   var iterations
   # PBKDF information used only during PASE (freed afterwards)
   var salt
@@ -59,6 +61,7 @@ class Matter_Device
     self.vendorid = self.VENDOR_ID
     self.productid = self.PRODUCT_ID
     self.iterations = self.PBKDF_ITERATIONS
+    self.ipv4only = false
     self.load_param()
     self.commissioning_instance_wifi = crypto.random(8).tohex()    # 16 characters random hostname
     self.commissioning_instance_eth = crypto.random(8).tohex()    # 16 characters random hostname
@@ -114,6 +117,7 @@ class Matter_Device
   # iterations is set to 1000 which is large enough
   def compute_pbkdf(passcode_int)
     import crypto
+    import string
     self.salt = crypto.random(16)         # bytes("5350414B453250204B65792053616C74")
     var passcode = bytes().add(passcode_int, 4)
 
@@ -125,13 +129,17 @@ class Matter_Device
     self.w1 = crypto.EC_P256().mod(w1s)
     self.L = crypto.EC_P256().public_key(self.w1)
 
-    tasmota.log("MTR: ******************************", 3)
-    tasmota.log("MTR: salt          = " + self.salt.tohex(), 3)
-    tasmota.log("MTR: passcode      = " + passcode.tohex(), 3)
-    tasmota.log("MTR: w0            = " + self.w0.tohex(), 3)
-    tasmota.log("MTR: w1            = " + self.w1.tohex(), 3)
-    tasmota.log("MTR: L             = " + self.L.tohex(), 3)
-    tasmota.log("MTR: ******************************", 3)
+    tasmota.log("MTR: ******************************", 4)
+    tasmota.log("MTR: salt          = " + self.salt.tohex(), 4)
+    tasmota.log("MTR: passcode_hex  = " + passcode.tohex(), 4)
+    tasmota.log("MTR: w0            = " + self.w0.tohex(), 4)
+    tasmota.log("MTR: w1            = " + self.w1.tohex(), 4)
+    tasmota.log("MTR: L             = " + self.L.tohex(), 4)
+    tasmota.log("MTR: ******************************", 4)
+
+    # show Manual pairing code in logs
+    var pairing_code = self.compute_manual_pairing_code()
+    tasmota.log(string.format("MTR: Manual pairing code: %s-%s-%s", pairing_code[0..3], pairing_code[4..6], pairing_code[7..]), 2)
   end
 
   #############################################################
@@ -168,6 +176,12 @@ class Matter_Device
   def every_second()
     self.sessions.every_second()
     self.message_handler.every_second()
+  end
+
+  #############################################################
+  # dispatch every 250ms click to sub-objects that need it
+  def every_250ms()
+    self.message_handler.every_250ms()
   end
 
   #############################################################
@@ -276,6 +290,18 @@ class Matter_Device
   end
 
   #############################################################
+  # signal that an attribute has been changed
+  #
+  def attribute_updated(endpoint, cluster, attribute, fabric_specific)
+    if fabric_specific == nil   fabric_specific = false end
+    var ctx = matter.Path()
+    ctx.endpoint = endpoint
+    ctx.cluster = cluster
+    ctx.attribute = attribute
+    self.message_handler.im.subs.attribute_updated_ctx(ctx, fabric_specific)
+  end
+
+  #############################################################
   # expand attribute list based 
   #
   # called only when expansion is needed,
@@ -344,7 +370,7 @@ class Matter_Device
           var attr_list = pi.get_attribute_list(ep, cl)
           tasmota.log(string.format("MTR: pi=%s ep=%s cl=%s at_list=%s", str(pi), str(ep), str(cl), str(attr_list)), 4)
           for at: attr_list
-            if attribute != nil && at != attribute  continue  end       # skip if specific attribiute and no match
+            if attribute != nil && at != attribute  continue  end       # skip if specific attribute and no match
             # from now on, 'at' is a good candidate
             if !all[ep][cl].contains(at)        all[ep][cl][at] = [] end
             attribute_found = true
@@ -386,11 +412,6 @@ class Matter_Device
     end
   end
 
-  # def process_read_attribute(ctx)
-  #   self.process_attribute_expansion(ctx,
-  #       / pi, ctx, direct -> pi.read_attribute(ctx))
-  # end
-
   #############################################################
   # get active endpoints
   #
@@ -416,7 +437,7 @@ class Matter_Device
   # 
   def save_param()
     import json
-    var j = json.dump({'distinguish':self.discriminator, 'passcode':self.passcode})
+    var j = json.dump({'distinguish':self.discriminator, 'passcode':self.passcode, 'ipv4only':self.ipv4only})
     try
       import string
       var f = open(self.FILENAME, "w")
@@ -442,8 +463,9 @@ class Matter_Device
       import json
       var j = json.load(s)
 
-      self.discriminator = j.find("distinguish")
-      self.passcode = j.find("passcode")
+      self.discriminator = j.find("distinguish", self.discriminator)
+      self.passcode = j.find("passcode", self.passcode)
+      self.ipv4only = bool(j.find("ipv4only", false))
     except .. as e, m
       if e != "io_error"
         tasmota.log("MTR: Session_Store::load Exception:" + str(e) + "|" + str(m), 2)
@@ -469,12 +491,12 @@ class Matter_Device
   # Plugins allow to specify response to read/write attributes
   # and command invokes
   #############################################################
-  def invoke_request(msg, val, ctx)
+  def invoke_request(session, val, ctx)
     var idx = 0
     while idx < size(self.plugins)
       var plugin = self.plugins[idx]
 
-      var ret = plugin.invoke_request(msg, val, ctx)
+      var ret = plugin.invoke_request(session, val, ctx)
       if  ret != nil || ctx.status != matter.UNSUPPORTED_COMMAND  # default value
         return ret
       end
@@ -533,7 +555,11 @@ class Matter_Device
       if is_eth
         var eth = tasmota.eth()
         self.hostname_eth  = string.replace(eth.find("mac"), ':', '')
-        mdns.add_hostname(self.hostname_eth, eth.find('ip6local',''), eth.find('ip',''), eth.find('ip6',''))
+        if !self.ipv4only
+          mdns.add_hostname(self.hostname_eth, eth.find('ip6local',''), eth.find('ip',''), eth.find('ip6',''))
+        else
+          mdns.add_hostname(self.hostname_eth, eth.find('ip',''))
+        end
         mdns.add_service("_matterc", "_udp", 5540, services, self.commissioning_instance_eth, self.hostname_eth)
 
         tasmota.log(string.format("MTR: starting mDNS on %s '%s' ptr to `%s.local`", is_eth ? "eth" : "wifi",
@@ -556,7 +582,11 @@ class Matter_Device
       else
         var wifi = tasmota.wifi()
         self.hostname_wifi = string.replace(wifi.find("mac"), ':', '')
-        mdns.add_hostname(self.hostname_wifi, wifi.find('ip6local',''), wifi.find('ip',''), wifi.find('ip6',''))
+        if !self.ipv4only
+          mdns.add_hostname(self.hostname_wifi, wifi.find('ip6local',''), wifi.find('ip',''), wifi.find('ip6',''))
+        else
+          mdns.add_hostname(self.hostname_wifi, wifi.find('ip',''))
+        end
         mdns.add_service("_matterc", "_udp", 5540, services, self.commissioning_instance_wifi, self.hostname_wifi)
 
         tasmota.log(string.format("MTR: starting mDNS on %s '%s' ptr to `%s.local`", is_eth ? "eth" : "wifi",

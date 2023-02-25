@@ -29,8 +29,8 @@ class Matter_Plugin_Root : Matter_Plugin
   static var CLUSTERS  = {
     0x001D: [0,1,2,3],                # Descriptor Cluster 9.5 p.453
     0x001F: [0,2,3,4],                # Access Control Cluster, p.461
-    0x0028: [0,1,2,3,4,5,6,7,8,9,0x12],# Basic Information Cluster cluster 11.1 p.565
-    0x002A: [0,1,2,3],                # OTA Software Update Requestor Cluster Definition 11.19.7 p.762
+    0x0028: [0,1,2,3,4,5,6,7,8,9,0x12,0x13],# Basic Information Cluster cluster 11.1 p.565
+    # 0x002A: [0,1,2,3],                # OTA Software Update Requestor Cluster Definition 11.19.7 p.762
     0x002B: [0,1],                    # Localization Configuration Cluster 11.3 p.580
     0x002C: [0,1,2],                  # Time Format Localization Cluster 11.4 p.581
     0x0030: [0,1,2,3,4],              # GeneralCommissioning cluster 11.9 p.627
@@ -43,7 +43,7 @@ class Matter_Plugin_Root : Matter_Plugin
     0x003E: [0,1,2,3,4,5],            # Node Operational Credentials Cluster 11.17 p.704
     0x003F: []                        # Group Key Management Cluster 11.2 p.572
   }
-  static var TYPES = [ 0x0016 ]       # On/Off Light
+  static var TYPES = { 0x0016: 1 }       # Root node
 
   #############################################################
   # Constructor
@@ -56,7 +56,7 @@ class Matter_Plugin_Root : Matter_Plugin
   #############################################################
   # read an attribute
   #
-  def read_attribute(msg, ctx)
+  def read_attribute(session, ctx)
     import string
     var TLV = matter.TLV
     var cluster = ctx.cluster
@@ -65,7 +65,7 @@ class Matter_Plugin_Root : Matter_Plugin
     if   cluster == 0x0030              # ========== GeneralCommissioning cluster 11.9 p.627 ==========
 
       if   attribute == 0x0000          # ---------- Breadcrumb ----------
-        return TLV.create_TLV(TLV.U8, msg.session.__breadcrumb)
+        return TLV.create_TLV(TLV.U8, session.__breadcrumb)
       elif attribute == 0x0001          # ---------- BasicCommissioningInfo / BasicCommissioningInfo----------
         var bci = TLV.Matter_TLV_struct()
         bci.add_TLV(0, TLV.U2, 60)      # FailSafeExpiryLengthSeconds
@@ -153,22 +153,22 @@ class Matter_Plugin_Root : Matter_Plugin
 
       if   attribute == 0x0000          #  ---------- NOCs / list[NOCStruct] ----------
         var nocl = TLV.Matter_TLV_array() # NOCs, p.711
-        for session: self.device.sessions.sessions_active()
+        for loc_session: self.device.sessions.sessions_active()
           var nocs = nocl.add_struct(nil)
-          nocs.add_TLV(1, TLV.B2, session.noc)      # NOC
-          nocs.add_TLV(2, TLV.B2, session.icac)     # ICAC
+          nocs.add_TLV(1, TLV.B2, loc_session.noc)      # NOC
+          nocs.add_TLV(2, TLV.B2, loc_session.icac)     # ICAC
         end
         return nocl
       elif attribute == 0x0001          #  ---------- Fabrics / list[FabricDescriptorStruct] ----------
         var fabrics = TLV.Matter_TLV_array() # Fabrics, p.711
-        for session: self.device.sessions.sessions_active()
-          var root_ca_tlv = TLV.parse(session.get_ca())
+        for loc_session: self.device.sessions.sessions_active()
+          var root_ca_tlv = TLV.parse(loc_session.get_ca())
           var fab = fabrics.add_struct(nil)            # encoding see p.303
           fab.add_TLV(1, TLV.B2, root_ca_tlv.findsubval(9)) # RootPublicKey
-          fab.add_TLV(2, TLV.U2, session.admin_vendor)      # VendorID
-          fab.add_TLV(3, TLV.U8, session.fabric)            # FabricID
-          fab.add_TLV(4, TLV.U8, session.deviceid)          # NodeID
-          fab.add_TLV(5, TLV.UTF1, session.fabric_label)    # Label
+          fab.add_TLV(2, TLV.U2, loc_session.admin_vendor)      # VendorID
+          fab.add_TLV(3, TLV.U8, loc_session.fabric)            # FabricID
+          fab.add_TLV(4, TLV.U8, loc_session.deviceid)          # NodeID
+          fab.add_TLV(5, TLV.UTF1, loc_session.fabric_label)    # Label
         end
         return fabrics
       elif attribute == 0x0002          #  ---------- SupportedFabrics / u1 ----------
@@ -180,9 +180,9 @@ class Matter_Plugin_Root : Matter_Plugin
         # TODO
       elif attribute == 0x0005          #  ---------- Current­ FabricIndex / u1 ----------
         var sessions_active = self.device.sessions.sessions_active()
-        var fabric_index = sessions_active.find(msg.session)
-        if fabric_index == nil    fabric_index = 0 end
-        return TLV.create_TLV(TLV.U1, fabric_index)  # number of active sessions
+        var fabric_index = sessions_active.find(session)
+        if fabric_index == nil    fabric_index = -1 end
+        return TLV.create_TLV(TLV.U1, fabric_index + 1)  # number of active sessions
       end
 
     # ====================================================================================================
@@ -211,11 +211,16 @@ class Matter_Plugin_Root : Matter_Plugin
       elif attribute == 0x0008          #  ---------- HardwareVersionString / string ----------
         return TLV.create_TLV(TLV.UTF1, tasmota.cmd("Status 2")['StatusFWR']['Hardware'])
       elif attribute == 0x0009          #  ---------- SoftwareVersion / u32 ----------
-        return TLV.create_TLV(TLV.U2, 0)
+        return TLV.create_TLV(TLV.U2, 1)
       elif attribute == 0x000A          #  ---------- SoftwareVersionString / string ----------
         return TLV.create_TLV(TLV.UTF1, tasmota.cmd("Status 2")['StatusFWR']['Version'])
       elif attribute == 0x0012          #  ---------- UniqueID / string 32 max ----------
         return TLV.create_TLV(TLV.UTF1, tasmota.wifi().find("mac", ""))
+      elif attribute == 0x0013          #  ---------- CapabilityMinima / CapabilityMinimaStruct ----------
+        var cps = TLV.Matter_TLV_struct()
+        cps.add_TLV(0, TLV.U2, 3)       # CaseSessionsPerFabric = 3
+        cps.add_TLV(1, TLV.U2, 3)       # SubscriptionsPerFabric = 5
+        return cps
       end
 
     # ====================================================================================================
@@ -271,10 +276,10 @@ class Matter_Plugin_Root : Matter_Plugin
     elif   cluster == 0x001D              # ========== Descriptor Cluster 9.5 p.453 ==========
       if   attribute == 0x0000          # ---------- DeviceTypeList / list[DeviceTypeStruct] ----------
         var dtl = TLV.Matter_TLV_array()
-        for dt: self.TYPES
+        for dt: self.TYPES.keys()
           var d1 = dtl.add_struct()
           d1.add_TLV(0, TLV.U2, dt)     # DeviceType
-          d1.add_TLV(1, TLV.U2, 1)      # Revision
+          d1.add_TLV(1, TLV.U2, self.TYPES[dt])      # Revision
         end
         return dtl
       elif attribute == 0x0001          # ---------- ServerList / list[cluster-id] ----------
@@ -307,12 +312,11 @@ class Matter_Plugin_Root : Matter_Plugin
   #
   # returns a TLV object if successful, contains the response
   #   or an `int` to indicate a status
-  def invoke_request(msg, val, ctx)
+  def invoke_request(session, val, ctx)
     import crypto
     var TLV = matter.TLV
     var cluster = ctx.cluster
     var command = ctx.command
-    var session = msg.session
     if   cluster == 0x0030              # ========== GeneralCommissioning cluster 11.9 p.627 ==========
 
       if   command == 0x0000            # ---------- ArmFailSafe ----------
@@ -509,6 +513,13 @@ class Matter_Plugin_Root : Matter_Plugin
         return nil                      # trigger a standalone ack
 
       end
+
+    # ====================================================================================================
+    elif cluster == 0x002A              # ========== OTA Software Update Requestor Cluster Definition 11.19.7 p.762 ==========
+
+      if   command == 0x0000          #  ---------- DefaultOTAProviders  ----------
+        return true                   # OK
+      end
     end
 
   end
@@ -516,7 +527,7 @@ class Matter_Plugin_Root : Matter_Plugin
   #############################################################
   # write an attribute
   #
-  def write_attribute(msg, ctx, write_data)
+  def write_attribute(session, ctx, write_data)
     import string
     var TLV = matter.TLV
     var cluster = ctx.cluster
@@ -534,7 +545,8 @@ class Matter_Plugin_Root : Matter_Plugin
 
       if   attribute == 0x0000          # ---------- Breadcrumb ----------
         if type(write_data) == 'int' || isinstance(write_data, int64)
-          msg.session.__breadcrumb = write_data
+          session.__breadcrumb = write_data
+          self.attribute_updated(ctx.endpoint, ctx.cluster, ctx.attribute)    # TODO should we have a more generalized way each time a write_attribute is triggered, declare the attribute as changed?
           return true
         else
           ctx.status = matter.CONSTRAINT_ERROR
