@@ -168,9 +168,10 @@ class Matter_IM
     var status = val.findsubval(0, 0xFF)
     var message = self.find_sendqueue_by_exchangeid(msg.exchange_id)
     if status == matter.SUCCESS
-      tasmota.log("MTR: >Status_OK", 2)      # don't show 'SUCCESS' to not overflow logs with non-information
       if message
         return message.status_ok_received(msg)         # re-arm the sending of next packets for the same exchange
+      else
+        tasmota.log("MTR: >Status_OK", 2)      # don't show 'SUCCESS' to not overflow logs with non-information
       end
     else
       # error
@@ -273,8 +274,8 @@ class Matter_IM
       )
     end
 
-    tasmota.log("MTR: ReportDataMessage=" + str(ret), 3)
-    tasmota.log("MTR: ReportDataMessageTLV=" + str(ret.to_TLV()), 3)
+    # tasmota.log("MTR: ReportDataMessage=" + str(ret), 3)
+    # tasmota.log("MTR: ReportDataMessageTLV=" + str(ret.to_TLV()), 3)
 
     return ret
   end
@@ -307,8 +308,21 @@ class Matter_IM
     end
 
     tasmota.log("MTR: received SubscribeRequestMessage=" + str(query), 3)
+
     var sub = self.subs.new_subscription(msg.session, query)
-    tasmota.log("MTR: >Subscribe sub_id=" + str(sub.subscription_id), 2)
+
+    # expand a string with all attributes requested
+    var attr_req = []
+    var ctx = matter.Path()
+    for q:query.attributes_requests
+      ctx.endpoint = q.endpoint
+      ctx.cluster = q.cluster
+      ctx.attribute = q.attribute
+      attr_req.push(str(ctx))
+    end
+    tasmota.log(string.format("MTR: >Subscribe %s (min=%i, max=%i) sub_id=%i",
+                              attr_req.concat(" "), sub.min_interval, sub.max_interval, sub.subscription_id), 2)
+
     var ret = self._inner_process_read_request(msg.session, query)
     # ret is of type `Matter_ReportDataMessage`
     ret.subscription_id = sub.subscription_id     # enrich with subscription id TODO
@@ -583,8 +597,8 @@ class Matter_IM
     ret.suppress_response = (size(fake_read.attributes_requests) == 0)        # ret is of class `ReportDataMessage`
     ret.subscription_id = sub.subscription_id
 
-    self.send_queue.push(matter.IM_ReportDataSubscribed(session.__message_handler, session, ret, sub))
-    self.send_enqueued(session.__message_handler)
+    self.send_queue.push(matter.IM_ReportDataSubscribed(session._message_handler, session, ret, sub))
+    self.send_enqueued(session._message_handler)
   end
   
   #############################################################

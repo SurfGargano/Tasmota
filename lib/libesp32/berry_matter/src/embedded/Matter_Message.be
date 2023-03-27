@@ -171,7 +171,7 @@ class Matter_Frame
   #
   # Header is built from attributes
   # `payload` is a bytes() buffer for the app payload
-  def encode(payload)
+  def encode_frame(payload)
     var raw = bytes()
     # compute flags
     if self.flags == nil
@@ -244,7 +244,7 @@ class Matter_Frame
     end
     resp.session = self.session         # also copy the session object
     # message counter
-    resp.message_counter = self.session.counter_snd.next()
+    resp.message_counter = self.session.counter_snd_next()
     resp.local_session_id = self.session.initiator_session_id
       
     resp.x_flag_i = (self.x_flag_i ? 0 : 1)     # invert the initiator flag
@@ -284,7 +284,7 @@ class Matter_Frame
     # message counter
     # if self.session && self.session.initiator_session_id != 0
     if self.local_session_id != 0 && self.session && self.session.initiator_session_id != 0
-      resp.message_counter = self.session.counter_snd.next()
+      resp.message_counter = self.session.counter_snd_next()
       resp.local_session_id = self.session.initiator_session_id
     else
       resp.message_counter = self.session._counter_insecure_snd.next()
@@ -320,14 +320,14 @@ class Matter_Frame
       resp = matter.Frame(message_handler)
     end
 
-    resp.remote_ip = session.__ip
-    resp.remote_port = session.__port
+    resp.remote_ip = session._ip
+    resp.remote_port = session._port
 
     resp.flag_dsiz = 0x00
     resp.session = session         # also copy the session object
     # message counter
     if session && session.initiator_session_id != 0
-      resp.message_counter = session.counter_snd.next()
+      resp.message_counter = session.counter_snd_next()
       resp.local_session_id = session.initiator_session_id
     else
       resp.message_counter = session._counter_insecure_snd.next()
@@ -336,8 +336,8 @@ class Matter_Frame
       
     resp.x_flag_i = 1                                     # we are the initiator
     resp.opcode = opcode
-    session.__exchange_id += 1                            # move to next exchange_id
-    resp.exchange_id = session.__exchange_id | 0x10000    # special encoding for local exchange_id
+    session._exchange_id += 1                            # move to next exchange_id
+    resp.exchange_id = session._exchange_id | 0x10000    # special encoding for local exchange_id
     resp.protocol_id = 0x0001                             # PROTOCOL_ID_INTERACTION_MODEL
     resp.x_flag_r = reliable ? 1 : 0
 
@@ -428,8 +428,8 @@ class Matter_Frame
     var n = bytes()
     n.add(self.flags, 1)
     n.add(self.message_counter, 4)
-    if session.get_mode() == session.__CASE && session.deviceid
-      n .. session.deviceid
+    if session.is_CASE() && session.get_device_id()
+      n .. session.get_device_id()
     end
     n.resize(13)        # add zeros
 
